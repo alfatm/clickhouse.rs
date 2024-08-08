@@ -1,6 +1,6 @@
 use bytes::BufMut;
 use serde::{
-    ser::{Impossible, SerializeSeq, SerializeStruct, SerializeTuple, Serializer},
+    ser::{Impossible, SerializeMap, SerializeSeq, SerializeStruct, SerializeTuple, Serializer},
     Serialize,
 };
 
@@ -37,7 +37,7 @@ impl<'a, B: BufMut> Serializer for &'a mut RowBinarySerializer<B> {
     type SerializeTuple = Self;
     type SerializeTupleStruct = Impossible<(), Error>;
     type SerializeTupleVariant = Impossible<(), Error>;
-    type SerializeMap = Impossible<(), Error>;
+    type SerializeMap = Self;
     type SerializeStruct = Self;
     type SerializeStructVariant = Impossible<(), Error>;
 
@@ -165,7 +165,7 @@ impl<'a, B: BufMut> Serializer for &'a mut RowBinarySerializer<B> {
 
     #[inline]
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        todo!();
+        Ok(self)
     }
 
     #[inline]
@@ -232,6 +232,29 @@ impl<'a, B: BufMut> SerializeTuple for &'a mut RowBinarySerializer<B> {
 
     #[inline]
     fn end(self) -> Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a, B: BufMut> SerializeMap for &'a mut RowBinarySerializer<B> {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_key<T>(&mut self, _key: &T) -> Result<(), Self::Error>
+    where
+        T: ?Sized + Serialize,
+    {
+        Ok(())
+    }
+
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(&mut **self)
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
         Ok(())
     }
 }

@@ -10,21 +10,58 @@ fn column_names(data: &DataStruct) -> TokenStream {
     match &data.fields {
         Fields::Named(fields) => {
             let cx = Ctxt::new();
-            let column_names_iter = fields
+            let serde_fields = fields
                 .named
                 .iter()
                 .enumerate()
-                .map(|(index, field)| Field::from_ast(&cx, index, field, None, &SerdeDefault::None))
-                .filter(|field| !field.skip_serializing() && !field.skip_deserializing())
-                .map(|field| field.name().serialize_name().to_string());
+                .map(|(index, field)| {
+                    (
+                        field,
+                        Field::from_ast(&cx, index, field, None, &SerdeDefault::None),
+                    )
+                })
+                .filter(|(_syn_field, serde_params)| {
+                    !serde_params.skip_serializing() && !serde_params.skip_deserializing()
+                })
+                .collect::<Vec<_>>();
 
-            let tokens = quote! {
-                &[#( #column_names_iter,)*]
-            };
+            cx.check().unwrap();
 
-            // TODO: do something more clever?
-            let _ = cx.check();
-            tokens
+            let any_flatten = serde_fields
+                .iter()
+                .any(|(_, serde_params)| serde_params.flatten());
+
+            if !any_flatten {
+                let column_names = serde_fields.iter().map(|(_syn_field, serde_params)| {
+                    serde_params.name().serialize_name().to_string()
+                });
+
+                return quote! {
+                    &[#( #column_names,)*]
+                };
+            }
+
+            let column_names =
+                serde_fields
+                    .iter()
+                    .map(|(syn_field, serde_params)| match serde_params.flatten() {
+                        true => {
+                            let ty = &syn_field.ty;
+                            quote! {
+                                &#ty::COLUMN_NAMES
+                            }
+                        }
+                        false => {
+                            let name = serde_params.name().serialize_name().to_string();
+                            quote! {
+                                &[#name]
+                            }
+                        }
+                    });
+
+            quote! {
+                clickhouse::constcat::concat_slices!([&str]: #( #column_names, )*)
+            }
         }
         Fields::Unnamed(_) => {
             quote! { &[] }
@@ -48,7 +85,6 @@ pub fn row(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    // TODO: replace `clickhouse` with `::clickhouse` here.
     let expanded = quote! {
         #[automatically_derived]
         impl #impl_generics clickhouse::Row for #name #ty_generics #where_clause {

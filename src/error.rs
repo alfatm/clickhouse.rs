@@ -24,6 +24,8 @@ pub enum Error {
     RowNotFound,
     #[error("sequences must have a known size ahead of time")]
     SequenceMustHaveLength,
+    #[error("map must have a known size ahead of time")]
+    MapMustHaveLength,
     #[error("`deserialize_any` is not supported")]
     DeserializeAnyNotSupported,
     #[error("not enough data, probably a row type mismatches a database schema")]

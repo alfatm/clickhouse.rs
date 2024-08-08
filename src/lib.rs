@@ -12,6 +12,7 @@ use hyper::client::connect::HttpConnector;
 #[cfg(feature = "tls")]
 use hyper_tls::HttpsConnector;
 
+pub use ::constcat;
 pub use clickhouse_derive::Row;
 
 pub use self::{compression::Compression, row::Row};

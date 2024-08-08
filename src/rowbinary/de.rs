@@ -2,7 +2,7 @@ use std::{convert::TryFrom, mem, str};
 
 use bytes::Buf;
 use serde::{
-    de::{DeserializeSeed, Deserializer, SeqAccess, Visitor},
+    de::{DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor},
     Deserialize,
 };
 
@@ -208,8 +208,48 @@ impl<'de, 'a, B: Buf> Deserializer<'de> for &'a mut RowBinaryDeserializer<'de, B
     }
 
     #[inline]
-    fn deserialize_map<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        todo!();
+    fn deserialize_map<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        let len = self.read_size()?;
+
+        struct Access<'de, 'a, B> {
+            deserializer: &'a mut RowBinaryDeserializer<'de, B>,
+            len: usize,
+        }
+
+        impl<'de, 'a, B: Buf> MapAccess<'de> for Access<'de, 'a, B> {
+            type Error = Error;
+
+            fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
+            where
+                K: DeserializeSeed<'de>,
+            {
+                if self.len > 0 {
+                    self.len -= 1;
+                    let value = DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
+            }
+
+            fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
+            where
+                V: DeserializeSeed<'de>,
+            {
+                self.len -= 1;
+                let value = DeserializeSeed::deserialize(seed, &mut *self.deserializer)?;
+                Ok(value)
+            }
+
+            fn size_hint(&self) -> Option<usize> {
+                Some(self.len)
+            }
+        }
+
+        visitor.visit_map(Access {
+            deserializer: self,
+            len,
+        })
     }
 
     #[inline]
@@ -223,8 +263,8 @@ impl<'de, 'a, B: Buf> Deserializer<'de> for &'a mut RowBinaryDeserializer<'de, B
     }
 
     #[inline]
-    fn deserialize_identifier<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value> {
-        todo!();
+    fn deserialize_identifier<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
+        visitor.visit_str("")
     }
 
     #[inline]
