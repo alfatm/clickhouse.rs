@@ -24,8 +24,6 @@ pub enum Error {
     RowNotFound,
     #[error("sequences must have a known size ahead of time")]
     SequenceMustHaveLength,
-    #[error("map must have a known size ahead of time")]
-    MapMustHaveLength,
     #[error("`deserialize_any` is not supported")]
     DeserializeAnyNotSupported,
     #[error("not enough data, probably a row type mismatches a database schema")]
@@ -52,6 +50,12 @@ assert_impl_all!(Error: StdError, Send, Sync);
 
 impl From<hyper::Error> for Error {
     fn from(error: hyper::Error) -> Self {
+        Self::Network(Box::new(error))
+    }
+}
+
+impl From<hyper_util::client::legacy::Error> for Error {
+    fn from(error: hyper_util::client::legacy::Error) -> Self {
         Self::Network(Box::new(error))
     }
 }

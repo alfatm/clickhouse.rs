@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![warn(rust_2018_idioms, unreachable_pub)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
@@ -8,11 +7,14 @@ extern crate static_assertions;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use hyper::client::connect::HttpConnector;
 #[cfg(feature = "tls")]
 use hyper_tls::HttpsConnector;
+use hyper_util::{
+    client::legacy::{connect::HttpConnector, Client as HyperClient},
+    rt::TokioExecutor,
+};
 
-pub use ::constcat;
+pub use ::constcat; // re-export
 pub use clickhouse_derive::Row;
 
 pub use self::{compression::Compression, row::Row};
@@ -34,6 +36,7 @@ mod buflist;
 mod compression;
 mod cursor;
 mod http_client;
+mod request_body;
 mod response;
 mod row;
 mod rowbinary;
@@ -47,10 +50,9 @@ const TCP_KEEPALIVE: Duration = Duration::from_secs(60);
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A client containing HTTP pool.
-/// Can be created by using `Client::default()` or [`Client::with_http_client`].
 #[derive(Clone)]
 pub struct Client {
-    client: Arc<dyn HttpClient>,
+    http: Arc<dyn HttpClient>,
 
     url: String,
     database: Option<String>,
@@ -58,6 +60,7 @@ pub struct Client {
     password: Option<String>,
     compression: Compression,
     options: HashMap<String, String>,
+    headers: HashMap<String, String>,
 }
 
 impl Default for Client {
@@ -68,13 +71,20 @@ impl Default for Client {
         // TODO: make configurable in `Client::builder()`.
         connector.set_keepalive(Some(TCP_KEEPALIVE));
 
-        #[cfg(feature = "tls")]
-        let connector = HttpsConnector::new_with_connector({
-            connector.enforce_http(false);
-            connector
-        });
+        #[cfg(any(feature = "native-tls", feature = "rustls-tls"))]
+        connector.enforce_http(false);
 
-        let client = hyper::Client::builder()
+        #[cfg(all(feature = "native-tls", not(feature = "rustls-tls")))]
+        let connector = hyper_tls::HttpsConnector::new_with_connector(connector);
+
+        #[cfg(feature = "rustls-tls")]
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_http1()
+            .wrap_connector(connector);
+
+        let client = HyperClient::builder(TokioExecutor::new())
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)
             .build(connector);
 
@@ -84,16 +94,18 @@ impl Default for Client {
 
 impl Client {
     /// Creates a new client with a specified underlying HTTP client.
-    /// Now only [`hyper::Client`] is supported.
+    ///
+    /// See `HttpClient` for details.
     pub fn with_http_client(client: impl HttpClient) -> Self {
         Self {
-            client: Arc::new(client),
+            http: Arc::new(client),
             url: String::new(),
             database: None,
             user: None,
             password: None,
             compression: Compression::default(),
             options: HashMap::new(),
+            headers: HashMap::new(),
         }
     }
 
@@ -171,6 +183,18 @@ impl Client {
         self
     }
 
+    /// Used to specify a header that will be passed to all queries.
+    ///
+    /// # Example
+    /// ```
+    /// # use clickhouse::Client;
+    /// Client::default().with_header("Cookie", "A=1");
+    /// ```
+    pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.insert(name.into(), value.into());
+        self
+    }
+
     /// Starts a new INSERT statement.
     ///
     /// # Panics
@@ -197,5 +221,11 @@ impl Client {
     #[cfg(feature = "watch")]
     pub fn watch(&self, query: &str) -> watch::Watch {
         watch::Watch::new(self, query)
+    }
+
+    /// Used internally to modify the options map of an _already cloned_
+    /// [`Client`] instance.
+    pub(crate) fn add_option(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        self.options.insert(name.into(), value.into());
     }
 }

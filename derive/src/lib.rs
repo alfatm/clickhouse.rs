@@ -59,6 +59,7 @@ fn column_names(data: &DataStruct) -> TokenStream {
                         }
                     });
 
+            // TODO: replace `clickhouse` with `::clickhouse` here.
             quote! {
                 clickhouse::constcat::concat_slices!([&str]: #( #column_names, )*)
             }
@@ -85,6 +86,7 @@ pub fn row(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    // TODO: replace `clickhouse` with `::clickhouse` here.
     let expanded = quote! {
         #[automatically_derived]
         impl #impl_generics clickhouse::Row for #name #ty_generics #where_clause {
