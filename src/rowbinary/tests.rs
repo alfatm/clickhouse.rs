@@ -34,6 +34,13 @@ struct Sample<'a> {
     fixed_string: [u8; 4],
     array: Vec<i8>,
     boolean: bool,
+    #[serde(flatten)]
+    flatten: Flatten,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+struct Flatten {
+    inner: bool,
 }
 
 fn sample() -> Sample<'static> {
@@ -57,6 +64,7 @@ fn sample() -> Sample<'static> {
         fixed_string: [b'B', b'T', b'C', 0],
         array: vec![-42, 42, -42, 42],
         boolean: true,
+        flatten: Flatten { inner: false },
     }
 }
 
@@ -104,6 +112,8 @@ fn sample_serialized() -> Vec<u8> {
         0x04, 0xd6, 0x2a, 0xd6, 0x2a, //
         // [Boolean] true
         0x01, //
+        // [Boolean] false
+        0x00, //
     ]
 }
 

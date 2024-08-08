@@ -14,6 +14,7 @@ use hyper_util::{
     rt::TokioExecutor,
 };
 
+pub use ::constcat; // re-export
 pub use clickhouse_derive::Row;
 
 pub use self::{compression::Compression, row::Row};
@@ -222,7 +223,8 @@ impl Client {
         watch::Watch::new(self, query)
     }
 
-    /// Used internally to modify the options map of an _already cloned_ [`Client`] instance.
+    /// Used internally to modify the options map of an _already cloned_
+    /// [`Client`] instance.
     pub(crate) fn add_option(&mut self, name: impl Into<String>, value: impl Into<String>) {
         self.options.insert(name.into(), value.into());
     }
